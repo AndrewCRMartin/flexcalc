@@ -493,6 +493,8 @@ REAL RMSFrame(FRAME *frame1, FRAME *frame2)
    return(sqrt(rmsd/nCoor));
 }
 
+/* HERE */
+
 /***********************************************************************/
 /*>FRAME *CopyFrame(FRAME *frame)
    ------------------------------
