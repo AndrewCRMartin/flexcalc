@@ -7,7 +7,7 @@
    Date:       24.11.25
    Function:   Calculate a flexibility score from an MD trajectory
    
-   Copyright:  (c) Prof. Andrew C. R. Martin 2025
+   Copyright:  (c) Prof. Andrew C. R. Martin, abYinformatics, 2025
    Author:     Prof. Andrew C. R. Martin
    EMail:      andrew@bioinf.org.uk
                
@@ -21,6 +21,7 @@
    ============
    Calculates a flexibility score for a trajectory supplied in a simple
    format:
+
       >header
       x y z
       x y z
@@ -34,7 +35,7 @@
    The program minimizes memory usage by making multiple passes through
    the file.
 
-   The code procedes as follows:
+   The code proceeds as follows:
    1. Read the file through to obtain the number of frames
    2. Read a second time to calculate the average position for each atom
    3. Read a third time to find the frame closest to the average
@@ -68,8 +69,12 @@
 /***********************************************************************/
 /* Defines and macros
  */
-#define MAXBUFF 256
+#define MAXBUFF 512
 #define MAXFNM  1024
+#define PROGNAME "flexcalc"
+#define MSG_ATOMMISMATCH "Number of coordinates in frame doesn't match \
+first frame.\n  Frame Header: "
+#define MSG_NOMEM "No memory"
 typedef struct _frame
 {
    REAL x, y, z;
@@ -85,12 +90,14 @@ FRAME *CalculateMeanCoords(FILE *in, ULONG frameCount);
 FRAME *FindClosestToMean(FILE *in, FRAME *meanFrame, char *header);
 REAL  CalculateMeanRMSD(FILE *in, FRAME *closestFrame, ULONG frameCount);
 ULONG CountFrames(FILE *fp);
-FRAME *ReadFrame(FILE *in);
+FRAME *ReadFrame(FILE *in, char *header);
 REAL  RMSFrame(FRAME *frame1, FRAME *frame2);
 void  Usage(void);
 FRAME *CopyFrame(FRAME *frame);
 BOOL  AddFrame(FRAME *meanFrame, FRAME *frame, ULONG frameCount);
-void Die(char *msg, char *submsg);
+void  Die(char *msg, char *submsg);
+void  Msg(char *msg, char *submsg);
+void  PrintFrame(char *header, FRAME *frame);
 
 /***********************************************************************/
 /*>main(int argc, char **argv)
@@ -116,21 +123,18 @@ int main(int argc, char **argv)
          REAL  meanRMSD;
          ULONG frameCount = 0;
          if((frameCount   = CountFrames(in)) < 1)
-            Die("flexcalc Error: no frames in trajectory","");
+            Die("No frames in trajectory", "");
 
          if((meanFrame    = CalculateMeanCoords(in, frameCount))==NULL)
-            Die("flexcalc Error: unable to calculate mean coordinates",
-                "");
+            Die("Unable to calculate mean coordinates", "");
 
-         if((closestFrame =
-             FindClosestToMean(in, meanFrame, header))==NULL)
-            Die("flexcalc Error: couldn't find closest frame","");
+         if((closestFrame = FindClosestToMean(in, meanFrame,
+                                              header))==NULL)
+            Die("Couldn't find closest frame", header);
 
          if((meanRMSD     = CalculateMeanRMSD(in, closestFrame,
                                               frameCount)) < 0.0)
-            Die("flexcalc Error: unable to calculate mean RMSD",
-                "\n   Number of coordinates in frame doesn't match \
-first frame");
+            Die("Unable to calculate mean RMSD", "");
          
          fclose(in); 
 
@@ -159,8 +163,24 @@ first frame");
 */
 void Die(char *msg, char *submsg)
 {
-   fprintf(stderr, "%s%s\n", msg, submsg);
+   Msg(msg, submsg);
    exit(1);
+}
+
+/***********************************************************************/
+/*>void Msg(char *msg, char *submsg)
+   ---------------------------------
+*//**
+   \param[in]  *msg            Main messsage
+   \param[in]  *submsg         Submessage
+
+   Prints an error message
+
+-  25.11.25 Original   By: ACRM
+*/
+void Msg(char *msg, char *submsg)
+{
+   fprintf(stderr, "%s error: %s%s\n", PROGNAME, msg, submsg);
 }
 
 
@@ -184,19 +204,27 @@ REAL CalculateMeanRMSD(FILE *in, FRAME *closestFrame, ULONG frameCount)
 {
    REAL meanRMSD = 0.0;
    FRAME *frame = NULL;
+   char  header[MAXBUFF];
 
    /* Reset the frame reading                                           */
-   ReadFrame(NULL);
+   ReadFrame(NULL, NULL);
 
    /* Read frames, one at a time                                        */
-   while((frame = ReadFrame(in))!=NULL)
+   while((frame = ReadFrame(in, header))!=NULL)
    {
       REAL rmsd;
       /* Add the RMSD of this frame to the closest-to-mean frame and
          the free this frame
       */
       if((rmsd = RMSFrame(closestFrame, frame)) < 0.0)
+      {
+         Msg(MSG_ATOMMISMATCH, header);
          return(-1.0);
+      }
+
+#ifdef DEBUG
+      PrintFrame(header, frame);
+#endif
       
       meanRMSD += rmsd;
       FREELIST(frame, FRAME);
@@ -225,26 +253,28 @@ REAL CalculateMeanRMSD(FILE *in, FRAME *closestFrame, ULONG frameCount)
    
 -  24.11.25 Original   By: ACRM
 */
-/* TODO - use header */
-
 FRAME *FindClosestToMean(FILE *in, FRAME *meanFrame, char *header)
 {
    FRAME *frame = NULL,
          *closestFrame = NULL;
    BOOL  firstFrame = TRUE;
    REAL  lowestRMSD;
+   char  thisHeader[MAXBUFF];
 
    /* Reset the frame reading                                           */
-   ReadFrame(NULL);
+   ReadFrame(NULL, NULL);
 
    /* Read frames, one at a time                                        */
-   while((frame = ReadFrame(in))!=NULL)
+   while((frame = ReadFrame(in, thisHeader))!=NULL)
    {
       REAL rmsd;
 
       /* Calculate RMSD to the mean frame                               */
       if((rmsd = RMSFrame(meanFrame, frame)) < 0.0)
+      {
+         Msg(MSG_ATOMMISMATCH, header);
          return(NULL);
+      }
 
       /* If it was the first frame, make a copy of it and assume it's
          the best
@@ -253,6 +283,7 @@ FRAME *FindClosestToMean(FILE *in, FRAME *meanFrame, char *header)
       {
          if((closestFrame = CopyFrame(frame))==NULL)
          {
+            Msg(MSG_NOMEM, header);
             return(NULL);
          }
          lowestRMSD = rmsd;
@@ -284,7 +315,7 @@ FRAME *FindClosestToMean(FILE *in, FRAME *meanFrame, char *header)
    ------------------------------------------------------
 *//**
    \param[in]  *in             file pointer to trajectory
-   \param[in]  frameCount      the nnumber of frames
+   \param[in]  frameCount      the number of frames
    \return                     a pretend frame containing coordinates
                                averaged across the real frames
 
@@ -295,18 +326,19 @@ FRAME *FindClosestToMean(FILE *in, FRAME *meanFrame, char *header)
 */
 FRAME *CalculateMeanCoords(FILE *in, ULONG frameCount)
 {
-   FRAME *frame = NULL,
+   FRAME *frame     = NULL,
          *meanFrame = NULL,
          *f;
+   char  header[MAXBUFF];
 
    /* Reset the frame reading                                           */
-   ReadFrame(NULL);
+   ReadFrame(NULL, NULL);
 
    /* Initialize the meanFrame - just read in the first frame then
       reset to zero coordinates, then rewind the file so we will
       re-read it.
    */
-   meanFrame = ReadFrame(in);
+   meanFrame = ReadFrame(in, header);
    for(f=meanFrame; f!=NULL; NEXT(f))
    {
       f->x = 0.0;
@@ -316,17 +348,27 @@ FRAME *CalculateMeanCoords(FILE *in, ULONG frameCount)
    rewind(in);
    
    /* Reset the frame reading                                           */
-   ReadFrame(NULL);
+   ReadFrame(NULL, NULL);
    
    /* Read frames, one at a time                                        */
-   while((frame = ReadFrame(in))!=NULL)
+   while((frame = ReadFrame(in, header))!=NULL)
    {
-      if(!AddFrame(meanFrame, frame, frameCount))
-         Die("flexcalc Error: number of coordinates in frame doesn't \
-match the first frame"," TODO: Frame header here!");
+      BOOL ok;
+      ok = AddFrame(meanFrame, frame, frameCount);
       FREELIST(frame, FRAME);
+      if(!ok)
+      {
+         Msg(MSG_ATOMMISMATCH, header);
+         FREELIST(meanFrame, FRAME);
+         meanFrame = NULL;
+         break;
+      }
    }
    rewind(in);
+
+#ifdef DEBUG
+   PrintFrame("average", meanFrame);
+#endif
    return(meanFrame);
 }
 
@@ -355,10 +397,11 @@ BOOL ParseCmdLine(int argc, char **argv, char *inFile)
 }
 
 /***********************************************************************/
-/*>FRAME *ReadFrame(FILE *in)
-   --------------------------
+/*>FRAME *ReadFrame(FILE *in, char *header)
+   ----------------------------------------
 *//**
    \param[in]  *in             file pointer to trajectory
+   \param[out] *header         the frame header
    \return                     the next frame from the file
 
    Reads a frame allocating a FRAME linked list
@@ -366,12 +409,10 @@ BOOL ParseCmdLine(int argc, char **argv, char *inFile)
 -  24.11.25 Original   By: ACRM
 */
 
-/* TODO output the header */
-FRAME *ReadFrame(FILE *in)
+FRAME *ReadFrame(FILE *in, char *header)
 {
    static char buffer[MAXBUFF];
    static BOOL firstEntry = TRUE;
-   char header[MAXBUFF];
    FRAME *frame = NULL,
          *f = NULL;
 
@@ -398,14 +439,9 @@ FRAME *ReadFrame(FILE *in)
       if(buffer[0] == '>')  /* A header                                 */
       {
          if(!firstEntry)
-         {
-            strncpy(header, buffer, MAXBUFF-1);
             break;
-         }
          else
-         {
             firstEntry = FALSE;
-         }
       }
       else
       {
@@ -583,6 +619,20 @@ BOOL AddFrame(FRAME *meanFrame, FRAME *frame, ULONG frameCount)
    
    return(TRUE);
 }
+
+
+/***********************************************************************/
+void PrintFrame(char *header, FRAME *frame)
+{
+   FRAME *f;
+   
+   printf("%s\n", header);
+   for(f=frame; f!=NULL; NEXT(f))
+   {
+      printf("%.3f %.3f %.3f\n",f->x, f->y, f->z);
+   }
+}
+
 
 /***********************************************************************/
 /*>void Usage(void)
