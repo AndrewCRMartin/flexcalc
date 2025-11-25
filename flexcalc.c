@@ -38,7 +38,7 @@
    1. Read the file through to obtain the number of frames
    2. Read a second time to calculate the average position for each atom
    3. Read a third time to find the frame closest to the average
-   4. Read a fouth time to calculate the RMSD of each frame from the
+   4. Read a fourth time to calculate the RMSD of each frame from the
       frame closest to the average
    5. Calculate and display the average of the RMSDs
 
@@ -243,14 +243,18 @@ FRAME *FindClosestToMean(FILE *in, FRAME *meanFrame, char *header)
       REAL rmsd;
 
       /* Calculate RMSD to the mean frame                               */
-      rmsd = RMSFrame(meanFrame, frame);
+      if((rmsd = RMSFrame(meanFrame, frame)) < 0.0)
+         return(NULL);
 
       /* If it was the first frame, make a copy of it and assume it's
          the best
       */
       if(firstFrame)
       {
-         closestFrame = CopyFrame(frame);
+         if((closestFrame = CopyFrame(frame))==NULL)
+         {
+            return(NULL);
+         }
          lowestRMSD = rmsd;
          firstFrame = FALSE;
       }
@@ -263,7 +267,8 @@ FRAME *FindClosestToMean(FILE *in, FRAME *meanFrame, char *header)
          {
             lowestRMSD = rmsd;
             FREELIST(closestFrame, FRAME);
-            closestFrame = CopyFrame(frame);
+            if((closestFrame = CopyFrame(frame))==NULL)
+               return(NULL);
          }
       }
       /* Free the current frame                                         */
@@ -493,7 +498,6 @@ REAL RMSFrame(FRAME *frame1, FRAME *frame2)
    return(sqrt(rmsd/nCoor));
 }
 
-/* HERE */
 
 /***********************************************************************/
 /*>FRAME *CopyFrame(FRAME *frame)
@@ -537,6 +541,7 @@ FRAME *CopyFrame(FRAME *frame)
    return(copy);
 }
 
+
 /***********************************************************************/
 /*>BOOL AddFrame(FRAME *meanFrame, FRAME *frame, ULONG frameCount)
    ---------------------------------------------------------------
@@ -571,7 +576,7 @@ BOOL AddFrame(FRAME *meanFrame, FRAME *frame, ULONG frameCount)
       NEXT(g);
    }
 
-   if((p != NULL) || (q != NULL))
+   if((f != NULL) || (g != NULL))
    {
       return(FALSE);
    }
@@ -589,5 +594,32 @@ BOOL AddFrame(FRAME *meanFrame, FRAME *frame, ULONG frameCount)
 */
 void Usage(void)
 {
+   printf("\nflexcalc V1.0 (c) Andrew C.R. Martin, abYinformatics\n");
+
+   printf("\nUsage: flexcalc trajectoryfile\n");
+
+   printf("\nTakes a simple trajectory file in the format:\n");
+   printf("      >frame header\n");
+   printf("      x y z\n");
+   printf("      x y z\n");
+   printf("      ...\n");
+   printf("      >frame header\n");
+   printf("      x y z\n");
+   printf("      x y z\n");
+   printf("      ...\n");
+   printf("      (etc)\n");
+
+   printf("\nand calculates a flexibility score. This is done by \
+calculating the\n");
+   printf("mean coordinate postions across the frames, finding the \
+frame closest\n");
+   printf("to the mean positions and then calculating the RMSD of each \
+frame to\n");
+   printf("that closest-to-mean frame. These RMSD values are then \
+averaged.\n");
+
+   printf("\nThe code makes multiple passes of the file in order to \
+minimize\n");
+   printf("memory usage for large trajectories.\n\n");
 }
 
