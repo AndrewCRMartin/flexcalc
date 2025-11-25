@@ -384,6 +384,7 @@ FRAME *CalculateMeanCoords(FILE *in, ULONG frameCount)
    Parses the command line
 
 -  24.11.25 Original   By: ACRM
+-  25.11.25 Checks for -h
 */
 BOOL ParseCmdLine(int argc, char **argv, char *inFile)
 {
@@ -393,6 +394,14 @@ BOOL ParseCmdLine(int argc, char **argv, char *inFile)
       strcpy(inFile, argv[0]);
       argc--; argv++;
    }
+   else
+   {
+      return(FALSE);
+   }
+   
+   if(!strcmp(inFile, "-h"))
+      return(FALSE);
+   
    return(TRUE);
 }
 
