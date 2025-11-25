@@ -13,7 +13,7 @@ supplied in a simple format:
       x y z
       ...
       >header
-            x y z
+      x y z
       x y z
       ...
       (etc)
